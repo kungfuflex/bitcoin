@@ -30,22 +30,33 @@ RUN groupadd -r bitcoin && useradd -r -m -g bitcoin bitcoin
 # Set up the data directory
 RUN mkdir -p /home/bitcoin/.bitcoin && chown -R bitcoin:bitcoin /home/bitcoin/.bitcoin
 
-# Copy the patch file
-COPY remove-op-return-limit.patch /tmp/
-
 # Clone Bitcoin repository
 WORKDIR /tmp
 RUN git clone https://github.com/bitcoin/bitcoin.git
 
-# Apply the patch to remove the 80-byte OP_RETURN limit
+# Check the directory structure
 WORKDIR /tmp/bitcoin
-RUN git apply /tmp/remove-op-return-limit.patch
+RUN ls -la
+
+# Apply the modification to remove the 80-byte OP_RETURN limit
+RUN sed -i 's/static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT \/ WITNESS_SCALE_FACTOR;/static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT;/' src/policy/policy.h
 
 # Build Bitcoin Core
-RUN ./autogen.sh && \
-    ./configure --disable-wallet --without-gui && \
-    make -j$(nproc) && \
-    make install
+# First check if we're in the right directory and if the build scripts exist
+RUN if [ -f "./autogen.sh" ]; then \
+        ./autogen.sh && \
+        ./configure --disable-wallet --without-gui && \
+        make -j$(nproc) && \
+        make install; \
+    elif [ -f "./configure.ac" ]; then \
+        autoreconf -i && \
+        ./configure --disable-wallet --without-gui && \
+        make -j$(nproc) && \
+        make install; \
+    else \
+        echo "Could not find build scripts. Directory contents:" && \
+        ls -la; \
+    fi
 
 # Clean up
 RUN rm -rf /tmp/bitcoin

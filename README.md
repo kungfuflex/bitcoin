@@ -16,7 +16,7 @@ This project modifies this limit to:
 static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT;
 ```
 
-This effectively removes the WITNESS_SCALE_FACTOR division (which is 4), allowing for much larger OP_RETURN data to be included in transactions.
+This effectively removes the WITNESS_SCALE_FACTOR division (which is 4), allowing for much larger OP_RETURN data to be included in transactions. The modification is applied during the Docker build process using a sed command in the Dockerfile.
 
 ## Building the Docker Image
 
