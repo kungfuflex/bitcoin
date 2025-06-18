@@ -18,6 +18,16 @@ static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT;
 
 This effectively removes the WITNESS_SCALE_FACTOR division (which is 4), allowing for much larger OP_RETURN data to be included in transactions. The modification is applied during the Docker build process using a sed command in the Dockerfile.
 
+## Build Process
+
+The Dockerfile builds Bitcoin Core from source using CMake:
+
+1. Clone the Bitcoin Core repository
+2. Apply the modification to remove the OP_RETURN size limit
+3. Create a build directory and use CMake to build Bitcoin Core
+4. Install the built binaries
+5. Set up the container to run bitcoind as the bitcoin user
+
 ## Building the Docker Image
 
 To build the Docker image:

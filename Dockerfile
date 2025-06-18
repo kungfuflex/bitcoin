@@ -1,8 +1,9 @@
 FROM ubuntu:22.04
 
-# Install dependencies
+# Install dependencies including CMake and SQLite3
 RUN apt-get update && apt-get install -y \
     build-essential \
+    cmake \
     libtool \
     autotools-dev \
     automake \
@@ -20,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     libzmq3-dev \
     libdb-dev \
     libdb++-dev \
+    libsqlite3-dev \
     git \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -34,29 +36,16 @@ RUN mkdir -p /home/bitcoin/.bitcoin && chown -R bitcoin:bitcoin /home/bitcoin/.b
 WORKDIR /tmp
 RUN git clone https://github.com/bitcoin/bitcoin.git
 
-# Check the directory structure
-WORKDIR /tmp/bitcoin
-RUN ls -la
-
 # Apply the modification to remove the 80-byte OP_RETURN limit
+WORKDIR /tmp/bitcoin
 RUN sed -i 's/static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT \/ WITNESS_SCALE_FACTOR;/static const unsigned int MAX_OP_RETURN_RELAY = MAX_STANDARD_TX_WEIGHT;/' src/policy/policy.h
 
-# Build Bitcoin Core
-# First check if we're in the right directory and if the build scripts exist
-RUN if [ -f "./autogen.sh" ]; then \
-        ./autogen.sh && \
-        ./configure --disable-wallet --without-gui && \
-        make -j$(nproc) && \
-        make install; \
-    elif [ -f "./configure.ac" ]; then \
-        autoreconf -i && \
-        ./configure --disable-wallet --without-gui && \
-        make -j$(nproc) && \
-        make install; \
-    else \
-        echo "Could not find build scripts. Directory contents:" && \
-        ls -la; \
-    fi
+# Build Bitcoin Core using CMake
+RUN mkdir -p build && \
+    cd build && \
+    cmake -DBUILD_BITCOIN_WALLET=OFF -DBUILD_BITCOIN_QT=OFF .. && \
+    make -j$(nproc) && \
+    make install
 
 # Clean up
 RUN rm -rf /tmp/bitcoin
