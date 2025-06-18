@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  bitcoind:
+    build: .
+    container_name: bitcoin-node
+    volumes:
+      - ./bitcoin-data:/home/bitcoin/.bitcoin
+    ports:
+      - "8333:8333"  # P2P port
+      - "8332:8332"  # RPC port
+    restart: unless-stopped
+    # Optional environment variables can be set here
+    # environment:
+    #   - BITCOIN_OPTS="-txindex -rpcallowip=0.0.0.0/0"

@@ -1,28 +1,18 @@
-# Patterns that are specific to a text editor, IDE, operating system, or user
-# environment are not added here. They should be added to your local gitignore
-# file instead:
-# https://docs.github.com/en/get-started/git-basics/ignoring-files#configuring-ignored-files-for-all-repositories-on-your-computer
+# Bitcoin data directory
+bitcoin-data/
 
-# Build subdirectories.
-/*build*
-!/build-aux
-!/build_msvc
+# Log files
+*.log
 
-*.pyc
+# Environment variables
+.env
 
-# Only ignore unexpected patches
-*.patch
-!contrib/guix/patches/*.patch
-!depends/patches/**/*.patch
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
 
-/CMakeUserPresets.json
-
-# Previous releases
-/releases
-
-# cargo default target dir
-target/
-
-/guix-build-*
-
-/ci/scratch/
+# OS specific files
+.DS_Store
+Thumbs.db
