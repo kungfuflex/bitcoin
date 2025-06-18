@@ -34,7 +34,7 @@ RUN mkdir -p /home/bitcoin/.bitcoin && chown -R bitcoin:bitcoin /home/bitcoin/.b
 
 # Clone Bitcoin repository
 WORKDIR /tmp
-RUN git clone https://github.com/bitcoin/bitcoin.git
+COPY . ./bitcoin
 
 # Apply the modification to remove the 80-byte OP_RETURN limit
 WORKDIR /tmp/bitcoin

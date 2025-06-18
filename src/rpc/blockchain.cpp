@@ -33,9 +33,12 @@
 #include <node/utxo_snapshot.h>
 #include <node/warnings.h>
 #include <primitives/transaction.h>
+#include <rpc/mining.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
+#include <key_io.h>
+#include <util/strencodings.h>
 #include <script/descriptor.h>
 #include <serialize.h>
 #include <streams.h>
@@ -86,6 +89,9 @@ UniValue WriteUTXOSnapshot(
     const fs::path& path,
     const fs::path& temppath,
     const std::function<void()>& interruption_point = {});
+
+// Forward declaration of generateBlocks from rpc/mining.cpp
+UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script, int nGenerate, uint64_t nMaxTries);
 
 /* Calculate the difficulty for a given block index.
  */
@@ -3399,9 +3405,116 @@ return RPCHelpMan{
     obj.pushKV("chainstates", std::move(obj_chainstates));
     return obj;
 }
-    };
+     };
 }
 
+static RPCHelpMan reorg()
+{
+    return RPCHelpMan{
+        "reorg",
+        "Rewinds the blockchain by invalidating a block N blocks back from the tip and then generates new blocks.\n"
+        "This is useful for testing reorg detection and handling in applications.\n",
+        {
+            {"blocks_to_rewind", RPCArg::Type::NUM, RPCArg::Optional::NO, "Number of blocks to rewind from the tip"},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated coins to"},
+            {"blocks_to_generate", RPCArg::Type::NUM, RPCArg::Default{1}, "Number of blocks to generate after rewinding"},
+            {"max_tries", RPCArg::Type::NUM, RPCArg::Default{1000000}, "Maximum number of iterations to try"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::STR_HEX, "invalidated_block_hash", "The hash of the block that was invalidated"},
+                {RPCResult::Type::NUM, "invalidated_block_height", "The height of the block that was invalidated"},
+                {RPCResult::Type::ARR, "generated_blocks", "The hashes of the blocks that were generated",
+                    {{RPCResult::Type::STR_HEX, "", "blockhash"}}},
+            }
+        },
+        RPCExamples{
+            HelpExampleCli("reorg", "1 \"address\" 2")
+            + HelpExampleRpc("reorg", "1, \"address\", 2")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        {
+            NodeContext& node = EnsureAnyNodeContext(request.context);
+            ChainstateManager& chainman = EnsureChainman(node);
+            
+            int blocks_to_rewind = request.params[0].getInt<int>();
+            std::string address_str = request.params[1].get_str();
+            int blocks_to_generate = request.params[2].isNull() ? 1 : request.params[2].getInt<int>();
+            int max_tries = request.params[3].isNull() ? 1000000 : request.params[3].getInt<int>();
+            
+            if (blocks_to_rewind <= 0) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Number of blocks to rewind must be positive");
+            }
+            
+            if (blocks_to_generate <= 0) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Number of blocks to generate must be positive");
+            }
+            
+            // Find the block to invalidate (N blocks back from the tip)
+            const CBlockIndex* tip;
+            const CBlockIndex* to_invalidate;
+            {
+                LOCK(cs_main);
+                tip = chainman.ActiveChain().Tip();
+                
+                if (blocks_to_rewind > tip->nHeight) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER,
+                        strprintf("Cannot rewind %d blocks as the current chain height is only %d",
+                                 blocks_to_rewind, tip->nHeight));
+                }
+                
+                to_invalidate = chainman.ActiveChain()[tip->nHeight - blocks_to_rewind + 1];
+                if (!to_invalidate) {
+                    throw JSONRPCError(RPC_INTERNAL_ERROR, "Could not find block to invalidate");
+                }
+            }
+            
+            // Store information about the invalidated block
+            uint256 invalidated_hash = to_invalidate->GetBlockHash();
+            int invalidated_height = to_invalidate->nHeight;
+            
+            // Invalidate the block
+            InvalidateBlock(chainman, invalidated_hash);
+            
+            // Generate new blocks
+            UniValue generated_blocks(UniValue::VARR);
+            
+            // We need to get the mining interface to generate blocks
+            Mining& miner = EnsureMining(node);
+            
+            // Generate the blocks
+            // Create a script from the address
+            CTxDestination destination = DecodeDestination(address_str);
+            if (!IsValidDestination(destination)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address");
+            }
+            CScript coinbase_output_script = GetScriptForDestination(destination);
+            
+            // Generate the blocks using the helper function
+            UniValue blockHashes = generateBlocks(chainman, miner, coinbase_output_script, blocks_to_generate, max_tries);
+            
+            // Convert the UniValue array to a vector of uint256
+            std::vector<uint256> block_hashes;
+            for (unsigned int i = 0; i < blockHashes.size(); i++) {
+                block_hashes.push_back(ParseHashV(blockHashes[i], "blockhash"));
+            }
+            
+            // Add the generated block hashes to the result
+            for (const uint256& hash : block_hashes) {
+                generated_blocks.push_back(hash.GetHex());
+            }
+            
+            // Prepare the result
+            UniValue result(UniValue::VOBJ);
+            result.pushKV("invalidated_block_hash", invalidated_hash.GetHex());
+            result.pushKV("invalidated_block_height", invalidated_height);
+            result.pushKV("generated_blocks", generated_blocks);
+            
+            return result;
+        },
+    };
+}
 
 void RegisterBlockchainRPCCommands(CRPCTable& t)
 {
@@ -3430,6 +3543,7 @@ void RegisterBlockchainRPCCommands(CRPCTable& t)
         {"blockchain", &dumptxoutset},
         {"blockchain", &loadtxoutset},
         {"blockchain", &getchainstates},
+        {"blockchain", &reorg},
         {"hidden", &invalidateblock},
         {"hidden", &reconsiderblock},
         {"hidden", &waitfornewblock},
